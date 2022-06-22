@@ -52,3 +52,32 @@ D: (a|b)(a|b)((a|b)|empty)(a|b){0,1}
 D: (a|b)(a|b)((a|b)|empty)((a|b)|empty)
 
 The resulting regex string should contain only non-special characters, \*, empty characters, and parentheses.
+
+
+Repetitions will be written in the form (a,b) where a is the minimum number of repetitions and b is the maximum.
+
+Special Cases:
+
+\* -> {0,} -> (0,-1) -> 0 or more
+
++ -> {1,} -> (1,-1) -> 1 or more
+
+? -> {0,1} -> (0,1) -> 0 or 1
+
+{0,2} -> (0,2) -> 0, 1 or 2
+
+{2} -> (2,2) -> Exactly 2
+
+{2,3} -> (2,3) -> 2 or 3
+
+{3,} -> (3,-1) -> 3 or more
+
+{,} -> (0,-1) -> 0 or more
+
+{,2} -> (0,2) -> 0, 1 or 2
+
+{} -> (0,0) -> Exactly 0
+
+{0,1,2} -> ERROR
+
+{2,1} -> ERROR
