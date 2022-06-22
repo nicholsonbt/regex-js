@@ -13,3 +13,42 @@ Regex generated: (A|B|C)\*
 
 The final DFA should then generate an array of tokens (using some form of semi-final states that
 represent the end of one of the regexs given) with the attributes of token-type and token-value.
+
+
+
+Original Expression:
+
+A: a|b<br/>
+B: (a|b)+<br/>
+C: (a\[a-d]\*(b|c)+a?|b){2,4}|c<br/>
+D: (a|b){2,4}
+
+Step 1: Surround with brackets.
+
+C: ((a\[a-d]\*(b|c)+a?|b){2,4}|c)
+
+Step 2: Rewrite \[a-N] as (a|b|...|N):
+
+C: ((a(a|b|c|d)\*(b|c)+a?|b){2,4}|c)
+
+Step 3: Rewrite + as \*:
+
+B: ((a|b)(a|b)*)<br/>
+C: ((a(a|b|c|d)\*(b|c)(b|c)\*a?|b){2,4}|c)
+
+Step 4: Rewrite ? with {0, 1}:
+
+C: ((a(a|b|c|d)\*(b|c)(b|c)\*a{0,1}|b){2,4}|c)
+
+Step 5: Rewrite {a,b} with {0, b-a}:
+
+C: (a(a|b|c|d)\*(b|c)(b|c)\*a{0,1}|b)(a(a|b|c|d)\*(b|c)(b|c)\*a{0,1}|b)(a(a|b|c|d)\*(b|c)(b|c)\*a{0,1}|b){0,2}|c)<br/>
+D: (a|b)(a|b)(a|b){0,2}
+
+Step 6: Rewrite {0, a} using empty:
+
+C: (a(a|b|c|d)\*(b|c)(b|c)\*(a|empty)|b)(a(a|b|c|d)\*(b|c)(b|c)\*(a|empty)|b)((a(a|b|c|d)\*(b|c)(b|c)\*(a|empty)|b)|empty)((a(a|b|c|d)\*(b|c)(b|c)\*(a|empty)|b)|empty)|c)<br/>
+D: (a|b)(a|b)((a|b)|empty)(a|b){0,1}
+D: (a|b)(a|b)((a|b)|empty)((a|b)|empty)
+
+The resulting regex string should contain only non-special characters, \*, empty characters, and parentheses.
