@@ -8,6 +8,7 @@ This project will be used as a major component of the scanner in a lexical analy
 and combine them. This would look something like:
 
 Regexs given: A, B, C
+
 Regex generated: (A|B|C)\*
 
 The final DFA should then generate an array of tokens (using some form of semi-final states that
