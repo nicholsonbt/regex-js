@@ -24,6 +24,8 @@ Regex.prototype.AddRegex = function(regex) {
 	
 	// Output the NFA.
 	nfa.Print();
+	
+	let dfa = new SubsetConstruction(nfa);
 }
 
 /**
@@ -592,7 +594,6 @@ NFA.prototype.AddTransition = function(state0, value, state1) {
 		this.values.push(value);
 }
 
-
 NFA.prototype.Singular = function(value) {
 	let nfa = new this.constructor();
 	
@@ -658,4 +659,204 @@ NFA.prototype.Asterisk = function(nfa) {
 	nfaNew.AddTransition(0, null, nfa.end + 2);
 	
 	return nfaNew;
+}
+
+
+
+
+NFA.prototype.eClosure = function(startStates) {
+	let reachable = [];
+	let r0, r1;
+	let state;
+	
+	// Add all states reachable, and the eClosure of all those states.
+	for (let i = 0; i < startStates.length; i++) {
+		state = startStates[i];
+		
+		// Add the current state to reachable states.
+		reachable.push(state);
+		
+		// If the state doesn't exist, ignore it.
+		if (!this.transitionTable.hasOwnProperty(state))
+			continue;
+		
+		// If the state has no eClosure, ignore it.
+		if (!this.transitionTable[state].hasOwnProperty(null))
+			continue;
+		
+		// Get all states immediately reachable by eClosure.
+		r0 = this.transitionTable[state][null];
+		
+		// Recursively call eClosure for all immediately reachable states.
+		r1 = this.eClosure(r0);
+			
+		for (let j = 0; j < r0.length; j++) {
+			// Add all immediately reachable states.
+			if (!reachable.includes(r0[j])) {
+				reachable.push(r0[j]);
+			}
+		}
+			
+		for (let j = 0; j < r1.length; j++) {
+			// Add all non-immediately reachable states.
+			if (!reachable.includes(r1[j])) {
+				reachable.push(r1[j]);
+			}
+		}
+	}
+	
+	// Return all reachable states.
+	return reachable;
+}
+
+NFA.prototype.Move = function(startStates, symbol) {
+	let reachable = [];
+	let resultantStates;
+	let state;
+	
+	// Add all states reachable, after symbol 'symbol' has been input.
+	for (let i = 0; i < startStates.length; i++) {
+		state = startStates[i];
+
+		// If there is a transition from this state given the symbol, add all resultant states to reachable.
+		if (this.transitionTable.hasOwnProperty(state) && this.transitionTable[state].hasOwnProperty(symbol)) {
+			resultantStates = this.transitionTable[state][symbol];
+			
+			for (let j = 0; j < resultantStates.length; j++) {
+				reachable.push(resultantStates[j]);
+			}
+		}
+	}
+	
+	// Return all reachable states.
+	return reachable;
+}
+
+
+
+
+function DFA() {
+	this.transitionTable = {};
+}
+
+
+function SubsetConstruction(nfa) {
+	this.StateMapping = {};
+	this.dfa = new DFA();
+	
+	this.mappings = 0;
+	
+	this.Build(nfa);
+	
+	for (let i = 0; i < this.mappings; i++) {
+		if (this.StateMapping[i].includes(0))
+			this.dfa.transitionTable[i]['start'] = true;
+		else
+			this.dfa.transitionTable[i]['start'] = false;
+		
+		if (this.StateMapping[i].includes(nfa.end))
+			this.dfa.transitionTable[i]['end'] = true;
+		else
+			this.dfa.transitionTable[i]['end'] = false;
+	}
+	
+	console.log(this.dfa);
+}
+
+SubsetConstruction.prototype.GetMapping = function(nfaStates) {
+	let memStates, flag;
+	
+	// Return a pre-exisiting mapping, if one exists.
+	for (let i = 0; i < this.mappings; i++) {
+		memStates = this.StateMapping[i];
+		flag = true;
+		
+		if (memStates.length != nfaStates.length)
+			continue;
+		
+		// Neither state array should contain duplicate state elements.
+		for (let j = 0; j < nfaStates.length; j++) {
+			if (!memStates.includes(nfaStates[j])) {
+				flag = false;
+				break;
+			}
+		}
+		
+		if (flag) {
+			return i;
+		}
+	}
+	
+	// Add a new mapping if no existing mapping exists.
+	this.StateMapping[this.mappings] = nfaStates;
+	this.dfa.transitionTable[this.mappings] = {};
+	this.mappings += 1;
+	
+	
+	// Return the newly created mapping.
+	return this.mappings - 1;
+}
+
+
+SubsetConstruction.prototype.HasMapping = function(nfaStates) {
+	let memStates, flag;
+	
+	// Return a pre-exisiting mapping, if one exists.
+	for (let i = 0; i < this.mappings; i++) {
+		memStates = this.StateMapping[i];
+		flag = true;
+		
+		if (memStates.length != nfaStates.length)
+			continue;
+		
+		// Neither state array should contain duplicate state elements.
+		for (let j = 0; j < nfaStates.length; j++) {
+			if (!memStates.includes(nfaStates[j])) {
+				flag = false;
+				break;
+			}
+		}
+		
+		if (flag) {
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+SubsetConstruction.prototype.Build = function(nfa) {
+	let symbols = [];
+	
+	// Get all starting states via eClosure of state 0.
+	let startStates = nfa.eClosure([0]);
+	
+	// Populate the array of symbols with all symbols excluding null (empty).
+	for (let i = 0; i < nfa.values.length; i++) {
+		if (nfa.values[i] != null) {
+			symbols.push(nfa.values[i]);
+		}
+	}
+
+	this.Recursive(nfa, this.GetMapping(startStates), symbols);
+}
+
+SubsetConstruction.prototype.Recursive = function(nfa, state, symbols) {
+	let symbol, states, mapping;
+	
+	for (let i = 0; i < symbols.length; i++) {
+		symbol = symbols[i];
+		
+		let move = nfa.Move(this.StateMapping[state], symbol);
+		
+		states = nfa.eClosure(move);
+		
+		if (states.length > 0 && !this.HasMapping(states)) {
+			mapping = this.GetMapping(states);
+			this.dfa.transitionTable[state][symbol] = mapping;
+			this.Recursive(nfa, mapping, symbols);
+		} else {
+			this.dfa.transitionTable[state][symbol] = this.GetMapping(states);
+		}
+	}
 }

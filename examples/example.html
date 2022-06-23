@@ -4,8 +4,9 @@
 		<script src="../regex.js"></script>
 		<script>
 			window.addEventListener('load', function(e) {
-				let regex = new Regex("(a|b|c|d)+b{3,5}(cb?|d)*");
-				
+				let regex0 = new Regex("(a|b|c|d)+b{3,5}(cb?|d)*");
+				let regex1 = new Regex("(a|b)*abb");
+				let regex2 = new Regex("a(b|c)*");
 				// Something like this aren't working yet: (a|b|c|d{3,4})+b{3,5}(cb?|d)*
 			});
 		</script>
