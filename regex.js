@@ -16,8 +16,14 @@ Regex.prototype.AddRegex = function(regex) {
 	// Builds a parse tree from the passed regex.
 	let regexTree = this.BuildParseTree(regex);
 	
+	// Build an NFA for the parse tree.
+	let nfa = this.BuildNFA(regexTree[0]);
+	
 	// Outputs the parse tree.
 	this.Print(regexTree);
+	
+	// Output the NFA.
+	nfa.Print();
 }
 
 /**
@@ -32,6 +38,51 @@ Regex.prototype.BuildParseTree = function(regex) {
 	
 	// Convert and return the array of tokens to a tree of tokens.
 	return this.ParseTokens(tokens);
+}
+
+/**
+ * Builds an NFA from the root nodes.
+ *
+ * @param {Token} token A token representing some subtree of the regex parse tree.
+ * @returns {NFA} An NFA representing the current subtree.
+ */
+Regex.prototype.BuildNFA = function(token) {
+	let nfa = new NFA();
+	
+	// If the token represents an 'ab' or 'a|b' NFA, return said NFA.
+	if (token.type == 'expression' && typeof token.value == 'object') {
+		let a, b, ab;
+		
+		// The token has two values, so must be an 'ab' NFA.
+		if (token.value.length == 2) {
+			a = this.BuildNFA(token.value[0]);
+			b = this.BuildNFA(token.value[1]);
+			ab = nfa.And(a, b);
+		}
+		
+		// The token has three values, so must be an 'a|b' NFA.
+		else if (token.value.length == 3) {
+			a = this.BuildNFA(token.value[0]);
+			b = this.BuildNFA(token.value[2]);
+			ab = nfa.Or(a, b);
+		}
+		
+		// The token has 0, 1, or more than 3 values, so is unknown.
+		else {
+			throw "ERROR";
+		}
+		
+		// If the token is encapsulated by a * (zero or more occurances), find the NFA representing this.
+		if (token.repetitions.end == -1)
+			ab = nfa.Asterisk(ab);
+		
+		return ab;
+	}
+	
+	// If the token represents a single character ('a'), return the NFA of this.
+	else {
+		return nfa.Singular(token.value);
+	}
 }
 
 /**
@@ -139,24 +190,33 @@ Regex.prototype.PushExpressions = function(tokens, n, token) {
 	return tokens;
 }
 
+/**
+ * Create a new expression representing (empty | a) for some expression a = 'orToken'.
+ *
+ * @param {Token} orToken The token to be combined with 'empty' in an or expression.
+ *
+ * @returns {Token} The token representing the or expression.
+ */
 Regex.prototype.GetEmptyOr = function(orToken) {
+	// Create an (empty | a) expression.
 	let expression = [
-		new this.Token('structure','('),
 		new this.Token('empty',null),
 		new this.Token('or','|'),
-		orToken,
-		new this.Token('structure',')')
+		orToken
 	];
 	
+	// Add the expression to a new token.
 	let newToken = new this.Token('expression', expression);
 	
+	// Set the individual repetitions to 1.
 	expression[0].repetitions = new this.Repetition(1,1);
 	expression[1].repetitions = new this.Repetition(1,1);
 	expression[2].repetitions = new this.Repetition(1,1);
-	expression[3].repetitions = new this.Repetition(1,1);
-	expression[4].repetitions = new this.Repetition(1,1);
+	
+	// Set the total repetitions to 1.
 	newToken.repetitions = new this.Repetition(1,1);
 	
+	// Return the new token.
 	return newToken;
 }
 
@@ -165,7 +225,6 @@ Regex.prototype.ExpandExpressions = function(tokens) {
 	let newTokens = [];
 	let minimum, maximum;
 	let newToken;
-	
 	
 	for (let i = 0; i < n; i++) {
 		newToken = tokens[i].Copy();
@@ -258,14 +317,17 @@ Regex.prototype.MergeExpressions = function(tokens) {
 						newTokens.splice(newTokens.length - 1, 1);
 						newTokens.push(token1);
 					}
-					else
+					else {
 						newTokens.push(token2);
+					}
 				}
-				else
+				else {
 					newTokens.push(token2);
+				}
 			}
-			else
+			else {
 				newTokens.push(token2);
+			}
 		}
 	}
 
@@ -472,3 +534,128 @@ Regex.prototype.Repetition = function(start, end) {
 	}
 }
 
+function NFA() {
+	this.transitionTable = {};
+	this.end = 0;
+	this.values = [];
+}
+
+NFA.prototype.Print = function() {
+	let value;
+	let n = this.values.length
+	
+	let str = "Start: 0\nEnd: " + this.end + "\n";
+	
+	
+	for (let i = 0; i < this.end; i++) {
+		if (!this.transitionTable.hasOwnProperty(i))
+			continue;
+		
+		
+		str += "\nState: " + i + ":";
+		
+		for (let j = 0; j < n; j++) {
+			value = this.values[j];
+			
+			str += " [" + value + ": ";
+			
+			if (!this.transitionTable[i].hasOwnProperty(value))
+				str += "/";
+			else {
+				let values = this.transitionTable[i][value];
+				str += values[0];
+				
+				for (let k = 1; k < values.length; k++)
+					str += ", " + values[k];
+			}
+			
+			str += "]";
+		}
+	}
+	
+	console.log(str);
+}
+
+NFA.prototype.AddTransition = function(state0, value, state1) {
+	if (!this.transitionTable.hasOwnProperty(state0))
+		this.transitionTable[state0] = {};
+	
+	if (!this.transitionTable[state0].hasOwnProperty(value))
+		this.transitionTable[state0][value] = [];
+	
+	this.transitionTable[state0][value].push(state1);
+	
+	if (state1 > this.end)
+		this.end = state1;
+	
+	if (!this.values.includes(value))
+		this.values.push(value);
+}
+
+
+NFA.prototype.Singular = function(value) {
+	let nfa = new this.constructor();
+	
+	nfa.AddTransition(0, value, 1);
+	
+	return nfa;
+}
+
+NFA.prototype.AddTransitions = function(nfa, start) {
+	let n = nfa.values.length;
+	let value, states;
+	
+	for (let i = 0; i < nfa.end; i++) {
+		this.transitionTable[start + i] = {};
+		
+		for (let j = 0; j < n; j++) {
+			value = nfa.values[j];
+			
+			if (nfa.transitionTable[i].hasOwnProperty(value)) {
+				states = nfa.transitionTable[i][value];
+				
+				for (let k = 0; k < states.length; k++)
+					this.AddTransition(start + i, value, start + states[k]);
+			}
+		}
+	}
+}
+
+NFA.prototype.And = function(nfaA, nfaB) {
+	let nfa = new this.constructor();
+
+	nfa.AddTransitions(nfaA, 0);
+	nfa.AddTransition(nfaA.end, null, nfaA.end + 1);
+	nfa.AddTransitions(nfaB, nfaA.end + 1);
+	
+	return nfa;
+}
+
+NFA.prototype.Or = function(nfaA, nfaB) {
+	let nfa = new this.constructor();
+	let k = 1;
+	
+	nfa.AddTransition(0, null, 1);
+	nfa.AddTransitions(nfaA, 1);
+	
+	nfa.AddTransition(0, null, nfaA.end + 2);
+	nfa.AddTransitions(nfaB, nfaA.end + 2);
+	
+	nfa.AddTransition(nfaA.end + 1, null, nfaA.end + nfaB.end + 3);
+	nfa.AddTransition(nfaA.end + nfaB.end + 2, null, nfaA.end + nfaB.end + 3);
+	return nfa;
+}
+
+NFA.prototype.Asterisk = function(nfa) {
+	let nfaNew = new this.constructor();
+
+	nfaNew.AddTransition(0, null, 1);
+	nfaNew.AddTransitions(nfa, 1);
+	
+	nfaNew.AddTransition(nfa.end + 1, null, 1);
+	
+	nfaNew.AddTransition(nfa.end + 1, null, nfa.end + 2);
+	nfaNew.AddTransition(0, null, nfa.end + 2);
+	
+	return nfaNew;
+}
