@@ -52,7 +52,7 @@ Regex.prototype.BuildNFA = function(token) {
 	let nfa = new NFA();
 	
 	// If the token represents an 'ab' or 'a|b' NFA, return said NFA.
-	if (token.type == 'expression' && typeof token.value == 'object') {
+	if (token.type == 'expr' && token.value.constructor == Array) {
 		let a, b, ab;
 		
 		// The token has two values, so must be an 'ab' NFA.
@@ -75,7 +75,7 @@ Regex.prototype.BuildNFA = function(token) {
 		}
 		
 		// If the token is encapsulated by a * (zero or more occurances), find the NFA representing this.
-		if (token.repetitions.end == -1)
+		if (token.repetitions[1] == -1)
 			ab = nfa.Asterisk(ab);
 		
 		return ab;
@@ -83,7 +83,7 @@ Regex.prototype.BuildNFA = function(token) {
 	
 	// If the token represents a single character ('a'), return the NFA of this.
 	else {
-		return nfa.Singular(token.value);
+		return nfa.Singular(token.value.value);
 	}
 }
 
@@ -106,13 +106,14 @@ Regex.prototype.Print = function(tree) {
  */
 Regex.prototype.AsString = function(token, str) {
 	// If the token represents an expression and has an object (Array) type, add its children to the string.
-	if (token.type == 'expression' && typeof token.value == 'object') {
+	if (token.type == 'expr' && token.value.constructor == Array) {
 		
 		// Signify that this is the start of an expression by using a left parenthesis.
 		str += '(';
 
 		// For every child of the given token, recursively add its value to the string.
 		for (let i = 0; i < token.value.length; i++) {
+			//console.log("--",token.value);
 			str = this.AsString(token.value[i], str);
 		}
 		
@@ -120,13 +121,13 @@ Regex.prototype.AsString = function(token, str) {
 		str += ')';
 		
 		// Signify that this token can be repeated 0 or more times.
-		if (token.repetitions.end == -1)
+		if (token.repetitions[1] == -1)
 			str += '*';
 	}
 	
-	// If the token has a null value, it represents an empty symbol.
-	else if (token.value == null) {
-		str += '{}';
+	// If 
+	else if (token.type == 'expr' && token.value.constructor == this.Token){
+		str = this.AsString(token.value, str);
 	}
 	
 	// Otherwise, the token represents a character or an or (|).
@@ -148,12 +149,68 @@ Regex.prototype.AsString = function(token, str) {
  *           number of repeats hasn't been reached) that acts as a root node to the tree.
  */
 Regex.prototype.ParseTokens = function(tokens) {
-	// The number of repeats of expanding and merging before the loop is forceably exited.
-	let repeatsLeft = 10;
+	// Input:
+	// <'meta', '(', (1,1)>
+	// <'char', 'a', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'b', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'char', 'b', (3,5)>
+	// <'meta', '(', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'char', 'b', (0,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (0,-1)>
+	
+	// Output:
+	// <'expr', [<'expr', [<'expr', [<'expr', [<'expr', 'a', (1,1)>,
+	//                                         <'meta', '|', (1,1)>,
+	//                                         <'expr', 'b', (1,1)>], (1,1)>,
+	//                               <'meta', '|', (1,1)>,
+	//                               <'expr', 'c', (1,1)>], (1,1)>,
+	//                     <'meta', '|', (1,1)>,
+	//                     <'expr', 'd', (1,1)>], (1,1)>,
+	//           <'expr', [<'expr', [<'expr', [<'expr', [<'expr', [<'expr', 'a', (1,1)>,
+	//                                                             <'meta', '|', (1,1)>,
+	//                                                             <'expr', 'b', (1,1)>], (1,1)>,
+	//                                                   <'meta', '|', (1,1)>,
+	//                                                   <'expr', 'c', (1,1)>], (1,1)>,
+	//                                         <'meta', '|', (1,1)>,
+	//                                         <'expr', 'd', (1,1)>], (0,-1)>,
+	//                               <'expr', [<'expr', [<'expr', [<'expr', [<'expr', <'char', 'b', (1,1)>, (1,1)>,
+	//                                                                       <'expr', <'char', 'b', (1,1)>, (1,1)>], (1,1)>,
+	//                                                             <'expr', <'char', 'b', (1,1)>, (1,1)>], (1,1)>,
+	//                                                   <'expr', [<'char', null, (1,1)>,
+	//	                                                           <'meta', '|', (1,1)>,
+	//	                                                           <'char', 'b', (1,1)>], (1,1)>], (1,1)>,
+	//                                         <'expr', [<'char', null, (1,1)>,
+	//	                                                 <'meta', '|', (1,1)>,
+	//	                                                 <'char', 'b', (1,1)>], (1,1)>], (1,1)>], (1,1)>,
+	//                     <'expr', [<'expr', [<'expr', <'char', 'c', (1,1)>, (1,1)>,
+	//                                         <'expr', [<'char', null, (1,1)>,
+	//	                                                 <'meta', '|', (1,1)>,
+	//	                                                 <'char', 'b', (1,1)>], (1,1)>], (1,1)>,
+	//                               <'meta', '|', (1,1)>,
+	//                               <'expr', <'char', 'd', (1,1)>, (1,1)>], (0,-1)>], (1,1)>], (1,1)>
+	//
+	// (I don't believe there are any errors in the above, but it was quite tedious to work out, so I may have missed a couple.)
 	
 	// Assigns repetition values to the tokens, allowing the regex to be represented via only
 	// characters, '|', parentheses, and '*'.
-	tokens = this.AssignRepetitions(tokens);
+	//tokens = this.AssignRepetitions(tokens);
+	tokens = this.CharsToExprs(tokens);
+	
+	return this.TokenArrayToTree(tokens);
+}
+
+Regex.prototype.TokenArrayToTree = function(tokens) {
+	// The number of repeats of expanding and merging before the loop is forceably exited.
+	let repeatsLeft = 10;
 	
 	// While the array of tokens has more than one root, keep trying to merge to a single root.
 	while (tokens.length != 1 && repeatsLeft > 0) {
@@ -164,13 +221,69 @@ Regex.prototype.ParseTokens = function(tokens) {
 		
 		// The tokens are merged by combining expanded sub-expressions into compound expressions.
 		tokens = this.MergeExpressions(tokens);
-		
+
 		// Decrement the number of repeats left.
 		repeatsLeft -= 1;
 	}
 	
 	// Return the array of token(s).
 	return tokens;
+}
+
+Regex.prototype.CharsToExprs = function(tokens) {
+	// Input:
+	// <'meta', '(', (1,1)>
+	// <'char', 'a', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'b', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'char', 'b', (3,5)>
+	// <'meta', '(', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'char', 'b', (0,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (0,-1)>
+	
+	// Output:
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'a', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'expr', <'char', 'b', (1,1)>, (3,5)>
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (0,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (0,-1)>
+	
+	let n = tokens.length;
+	let newTokens = [];
+	let newToken;
+	
+	// For each character token, assign it as the only leaf node of an expression.
+	for (let i = 0; i < n; i++) {
+		if (tokens[i].type == 'char') {
+			// Set the character repetitions to [1,1], and assign the characters original repetitions to the expression.
+			newToken = new this.Token(tokens[i].type, tokens[i].value, [1,1]);
+			newTokens.push(new this.Token('expr', newToken, tokens[i].repetitions));
+		} else {
+			// Add the non-character token to the array.
+			newTokens.push(tokens[i].Copy());
+		}
+	}
+	
+	return newTokens;
 }
 
 /**
@@ -202,64 +315,129 @@ Regex.prototype.PushExpressions = function(tokens, n, token) {
 Regex.prototype.GetEmptyOr = function(orToken) {
 	// Create an (empty | a) expression.
 	let expression = [
-		new this.Token('empty',null),
-		new this.Token('or','|'),
+		new this.Token('expr',new this.Token('char',null,[1,1]),[1,1]),
+		new this.Token('meta','|',[1,1]),
 		orToken
 	];
 	
 	// Add the expression to a new token.
-	let newToken = new this.Token('expression', expression);
-	
-	// Set the individual repetitions to 1.
-	expression[0].repetitions = new this.Repetition(1,1);
-	expression[1].repetitions = new this.Repetition(1,1);
-	expression[2].repetitions = new this.Repetition(1,1);
-	
-	// Set the total repetitions to 1.
-	newToken.repetitions = new this.Repetition(1,1);
+	let newToken = new this.Token('expr', expression, [1,1]);
 	
 	// Return the new token.
 	return newToken;
 }
 
 Regex.prototype.ExpandExpressions = function(tokens) {
+	// Input:
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'a', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'expr', <'char', 'b', (1,1)>, (3,5)>
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (0,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (0,-1)>
+	
+	// Output:
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'a', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// <'expr', [<'char', null, (1,1)>,
+	//	         <'meta', '|', (1,1)>,
+	//	         <'char', 'b', (1,1)>], (1,1)>
+	// <'expr', [<'char', null, (1,1)>,
+	//	         <'meta', '|', (1,1)>,
+	//	         <'char', 'b', (1,1)>], (1,1)>
+	// <'meta', '(', (1,1)>
+	// <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// <'expr', [<'char', null, (1,1)>,
+	//	         <'meta', '|', (1,1)>,
+	//	         <'char', 'b', (1,1)>], (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// <'meta', ')', (0,-1)>
+	
 	let n = tokens.length;
 	let newTokens = [];
 	let minimum, maximum;
 	let newToken;
+	let newExpressions;
 	
+	
+	// Repeat all expressions the required number of times.
 	for (let i = 0; i < n; i++) {
 		newToken = tokens[i].Copy();
 		
-		if (tokens[i].type == 'expression') {
-			minimum = tokens[i].repetitions.start;
-			maximum = tokens[i].repetitions.end;
+		if (tokens[i].type == 'expr') {
+			[minimum, maximum] = tokens[i].repetitions;
 			
+			// The token is a*, so add it as is.
 			if (minimum == 0 && maximum == -1) {
-				newTokens.push(tokens[i]);
-			} else if (minimum == 0 && maximum > 0) {
-				newTokens = this.PushExpressions(newTokens, maximum, this.GetEmptyOr(newToken));
-			} else if (minimum > 0 && minimum == maximum) {
-				newToken.repetitions.start = 1;
-				newToken.repetitions.end = 1;
-				newTokens = this.PushExpressions(newTokens, minimum, newToken);
-			} else if (minimum > 0 && minimum < maximum) {
-				newToken.repetitions.start = 1;
-				newToken.repetitions.end = 1;
-				newTokens = this.PushExpressions(newTokens, minimum, newToken);
-				newTokens = this.PushExpressions(newTokens, maximum - minimum, this.GetEmptyOr(newToken));
-			} else if (minimum > 0 && maximum == -1) {
-				newToken.repetitions.start = 1;
-				newToken.repetitions.end = 1;
-				newTokens = this.PushExpressions(newTokens, minimum, newToken.Copy());
-				newToken.repetitions.start = 0;
-				newToken.repetitions.end = -1;
-				newTokens.push(newToken.Copy());
-			} else {
+				newTokens.push(newToken);
+			}
+			
+			// The token is a{0,n} where n > 0, so add n (empty|a) expressions.
+			else if (minimum == 0 && maximum > 0) {
+				newExpressions = this.PushExpressions([], maximum, this.GetEmptyOr(newToken));
+				newTokens.push(this.TokenArrayToTree(newExpressions)[0]);
+			}
+			
+			// The token is a{n,n} where n > 0, so add n 'a' expressions.
+			else if (minimum > 0 && minimum == maximum) {
+				newToken.repetitions = [1,1]
+				newExpressions = this.PushExpressions([], minimum, newToken);
+				newTokens.push(this.TokenArrayToTree(newExpressions)[0]);
+			}
+			
+			// The token is a{n,m} where 0 < n < m, so add n 'a' expressions and m-n (empty|a) expressions.
+			else if (minimum > 0 && minimum < maximum) {
+				newToken.repetitions = [1,1]
+				newExpressions = this.PushExpressions([], minimum, newToken);
+				newExpressions = this.PushExpressions(newExpressions, maximum - minimum, this.GetEmptyOr(newToken));
+				newTokens.push(this.TokenArrayToTree(newExpressions)[0]);
+			}
+			
+			// The token is a{n,-1}, so add n 'a' expressions and a single a* expression.
+			else if (minimum > 0 && maximum == -1) {
+				newToken.repetitions = [1,1]
+				newExpressions = this.PushExpressions([], minimum, newToken);
+				
+				newToken.repetitions = [0,-1]
+				newExpressions.push(newToken.Copy());
+				
+				newTokens.push(this.TokenArrayToTree(newExpressions)[0]);
+				
+			}
+			
+			// The token is none of the above, so something must be wrong.
+			// The token must be undefined or a{n,m} where:
+			//   - n < 0 or
+			//   - m < -1 or
+			//   - n > m and m != -1 or
+			//   - n = 0 and m = 0
+			else {
 				throw "ERROR", newToken;
 			}
 		}
 		
+		// The token wasn't an expression, so add it as is.
 		else {
 			newTokens.push(newToken);
 		}
@@ -268,122 +446,186 @@ Regex.prototype.ExpandExpressions = function(tokens) {
 	return newTokens;
 }
 
+Regex.prototype.EqualRepetitions = function(repetitionsA, repetitionsB) {
+	// True if the two repetition arrays represent the same number of repetitions.
+	return (repetitionsA[0] == repetitionsB[0] && repetitionsA[1] == repetitionsB[1]);
+}
+
+Regex.prototype.HasRepetitions = function(token, repetitionOptions) {
+	let n = repetitionOptions.length;
+	
+	// True if at least one of the repetition options given represents the number of repetitions of the given token.
+	for (let i = 0; i < n; i++) {
+		if (this.EqualRepetitions(token.repetitions, repetitionOptions[i]))
+			return true;
+	}
+	
+	return false;
+}
+
 Regex.prototype.MergeExpressions = function(tokens) {
+	// Input:
+	// 00 <'meta', '(', (1,1)>
+	// 01 <'expr', <'char', 'a', (1,1)>, (1,1)>
+	// 02 <'meta', '|', (1,1)>
+	// 03 <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// 04 <'meta', '|', (1,1)>
+	// 05 <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// 06 <'meta', '|', (1,1)>
+	// 07 <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// 08 <'meta', ')', (1,-1)>
+	// 09 <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// 10 <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// 11 <'expr', <'char', 'b', (1,1)>, (1,1)>
+	// 12 <'expr', [<'char', null, (1,1)>,
+	//	            <'meta', '|', (1,1)>,
+	//	            <'char', 'b', (1,1)>], (1,1)>
+	// 13 <'expr', [<'char', null, (1,1)>,
+	//	            <'meta', '|', (1,1)>,
+	//	            <'char', 'b', (1,1)>], (1,1)>
+	// 14 <'meta', '(', (1,1)>
+	// 15 <'expr', <'char', 'c', (1,1)>, (1,1)>
+	// 16 <'expr', [<'char', null, (1,1)>,
+	//	            <'meta', '|', (1,1)>,
+	//	            <'char', 'b', (1,1)>], (1,1)>
+	// 17 <'meta', '|', (1,1)>
+	// 18 <'expr', <'char', 'd', (1,1)>, (1,1)>
+	// 19 <'meta', ')', (0,-1)>
+	
+	// Output:
+	// 20. Merge 1, 2 and 3 into an expression. a|b
+	// 21. Merge 20, 4 and 5 into an expression. (a|b)|c
+	// 22. Merge 21, 6 and 7 into an expression. ((a|b)|c)|d
+	// 23. Merge 0, 22 and 8 into an expression. (((a|b)|c)|d){1,-1}
+	// 24. Merge 9 and 10 into an expression. bb
+	// 25. Merge 24 and 11 into an expression (bb)b
+	// 26. Merge 25 and 12 into an expression ((bb)b)(empty|b)
+	// 27. Merge 26 and 13 into an expression (((bb)b)(empty|b))(empty|b)
+	// 28. Merge 15 and 16 into an expression c(empty|b)
+	// 29. Merge 28, 17 and 18 into an expression (c(empty|b))|d
+	// 30. Merge 14, 29 and 19 into an expression ((c(empty|b))|d){0,-1}
+	// Return [23, 27, 30]
+	//
+	// <'expr', [<'expr', [<'expr', [<'expr', 'a', (1,1)>,
+	//                               <'meta', '|', (1,1)>,
+	//                               <'expr', 'b', (1,1)>], (1,1)>,
+	//                     <'meta', '|', (1,1)>,
+	//                     <'expr', 'c', (1,1)>], (1,1)>,
+	//           <'meta', '|', (1,1)>,
+	//           <'expr', 'd', (1,1)>], (1,-1)>
+	// <'expr', [<'expr', [<'expr', [<'expr', [<'expr', <'char', 'b', (1,1)>, (1,1)>,
+	//                                         <'expr', <'char', 'b', (1,1)>, (1,1)>], (1,1)>,
+	//                               <'expr', <'char', 'b', (1,1)>, (1,1)>], (1,1)>,
+	//                     <'expr', [<'char', null, (1,1)>,
+	//	                             <'meta', '|', (1,1)>,
+	//	                             <'char', 'b', (1,1)>], (1,1)>], (1,1)>,
+	//           <'expr', [<'char', null, (1,1)>,
+	//	                   <'meta', '|', (1,1)>,
+	//	                   <'char', 'b', (1,1)>], (1,1)>], (1,1)>
+	// <'expr', [<'expr', [<'expr', <'char', 'c', (1,1)>, (1,1)>,
+	//                     <'expr', [<'char', null, (1,1)>,
+	//	                             <'meta', '|', (1,1)>,
+	//	                             <'char', 'b', (1,1)>], (1,1)>], (1,1)>,
+	//           <'meta', '|', (1,1)>,
+	//           <'expr', <'char', 'd', (1,1)>, (1,1)>], (0,-1)>
+	//
+	// (I don't believe there are any errors in the above, but it was quite tedious to work out, so I may have missed a couple.)
+	
 	let n = tokens.length;
 	let newTokens = [];
 	let token0, token1, token2;
 	
-	
-	if (n == 2 && tokens[0].type == 'expression' && tokens[1].type == 'expression') {
-		if ((tokens[0].repetitions.start == 0 && tokens[0].repetitions.end == -1) || (tokens[0].repetitions.start == 1 && tokens[0].repetitions.end == 1)) {
-			if ((tokens[1].repetitions.start == 0 && tokens[1].repetitions.end == -1) || (tokens[1].repetitions.start == 1 && tokens[1].repetitions.end == 1)) {
-				newTokens.push(new this.Token('expression', [tokens[0].Copy(), tokens[1].Copy()]));
-				newTokens[0].repetitions = new this.Repetition(1, 1);
-				return newTokens;
-			}
+	// If there are only two expressions in the array of expressions and they both have valid repetitions, merge them.
+	if (n == 2 && tokens[0].type == 'expr' && tokens[1].type == 'expr') {
+		if (this.HasRepetitions(tokens[0], [[0,-1],[1,1]]) && this.HasRepetitions(tokens[1], [[0,-1],[1,1]])) {
+			newTokens.push(new this.Token('expr', [tokens[0].Copy(), tokens[1].Copy()], [1,1]));
+			return newTokens;
 		}
-	} else if (n < 3) {
+	}
+	
+	// If the array is empty or only contains 1 element, return it.
+	else if (n < 3) {
 		return tokens;
 	}
-
+	
 	newTokens[0] = tokens[0].Copy();
 	newTokens[1] = tokens[1].Copy();
 	
 	for (let i = 2; i < n; i++) {
-		
-		
+		// If there aren't enough tokens in the new tokens array to merge, don't bother trying.
 		if (newTokens.length < 2) {
 			newTokens.push(tokens[i].Copy());
-		} else {
+		}
+		
+		// Try to merge the incoming token with the tail of the token array.
+		else {
 			token0 = newTokens[newTokens.length - 2];
 			token1 = newTokens[newTokens.length - 1];
-			token2 = tokens[i].Copy();
 			
-			if (token0.value == '(' && token1.type == 'expression' && token2.value == ')') {
-				token1.repetitions = token2.repetitions.Copy();
+			token2 = tokens[i].Copy();
+
+			// If a single expression (surrounded by parentheses) is found, remove the parentheses.
+			if (token0.value == '(' && token1.type == 'expr' && token2.value == ')') {
+				token1.repetitions = token2.repetitions;
 				newTokens.splice(newTokens.length - 2, 2);
 				newTokens.push(token1);
-			} else if (token0.type == 'expression' && token1.type == 'or' && token2.type == 'expression') {
-				token1 = new this.Token('expression', [token0, new this.Token('or','|'), token2]);
-				token1.value[1].repetitions = new this.Repetition(1,1);
-				token1.repetitions = new this.Repetition(1,1);
-				
+			}
+			
+			// If an expression of the form 'a|b' is found, merge it into a single expression.
+			else if (token0.type == 'expr' && token1.type == 'meta' && token1.value == '|' && token2.type == 'expr') {
+				token1 = new this.Token('expr', [token0, new this.Token('meta','|',[1,1]), token2], [1,1]);
 				newTokens.splice(newTokens.length - 2, 2);
 				newTokens.push(token1);
-			} else if (token1.type == 'expression' && token2.type == 'expression') {
-				if ((token1.repetitions.start == 0 && token1.repetitions.end == -1) || (token1.repetitions.start == 1 && token1.repetitions.end == 1)) {
-					if ((token2.repetitions.start == 0 && token2.repetitions.end == -1) || (token2.repetitions.start == 1 && token2.repetitions.end == 1)) {
-						token1 = new this.Token('expression', [token1.Copy(), token2.Copy()]);
-						token1.repetitions = new this.Repetition(1,1);
-						
-						newTokens.splice(newTokens.length - 1, 1);
-						newTokens.push(token1);
-					}
-					else {
-						newTokens.push(token2);
-					}
+			}
+			
+			// If an expression 'ab' is found, try to merge this into a single expression.
+			else if (token1.type == 'expr' && token2.type == 'expr') {
+				if (this.HasRepetitions(token1, [[0,-1],[1,1]]) && this.HasRepetitions(token2, [[0,-1],[1,1]])) {
+					token1 = new this.Token('expr', [token1.Copy(), token2.Copy()], [1,1]);
+					newTokens.splice(newTokens.length - 1, 1);
+					newTokens.push(token1);
 				}
+				
+				// If it can't be merged, just add the expression.
 				else {
 					newTokens.push(token2);
 				}
 			}
+			
+			// If no merge can be found, just add the token to the new token array.
 			else {
 				newTokens.push(token2);
 			}
 		}
 	}
 
-	return newTokens;
-}
-
-Regex.prototype.AssignRepetitions = function(tokens) {
-	let n = tokens.length;
-	
-	if (n < 1)
-		return tokens;
-	
-	let prev = tokens[0];
-	let newTokens = [];
-	
-	for (let i = 1; i < n; i++) {
-		if (prev.constructor == this.Token) {
-			if (tokens[i].constructor == this.Token) {
-				prev.repetitions = new this.Repetition(1,1);
-			} else if (tokens[i].constructor == this.Repetition) {
-				prev.repetitions = tokens[i];
-			} else {
-				throw "ERROR";
-			}
-			
-			if (prev.type == 'character')
-				prev.type = 'expression';
-			
-			newTokens.push(prev);
-		}
-		else if (prev.constructor == this.Repetition) {
-			if (tokens[i].constructor != this.Token) {
-				throw "ERROR";
-			}
-		}
-		else {
-			throw "ERROR";
-		}
-		
-		prev = tokens[i];
-	}
-	
-	if (prev.constructor == this.Token) {
-		if (prev.type == 'character')
-				prev.type = 'expression';
-			
-		prev.repetitions = new this.Repetition(1,1);
-		newTokens.push(prev);
-	}
-	
+	// Return the array of new tokens.
 	return newTokens;
 }
 
 Regex.prototype.TokenizeRegex = function(regex) {
+	// Input:
+	// (a|b|c|d)+b{3,5}(cb?|d)*
+	
+	// Output:
+	// <'meta', '(', (1,1)>
+	// <'char', 'a', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'b', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (1,-1)>
+	// <'char', 'b', (3,5)>
+	// <'meta', '(', (1,1)>
+	// <'char', 'c', (1,1)>
+	// <'char', 'b', (0,1)>
+	// <'meta', '|', (1,1)>
+	// <'char', 'd', (1,1)>
+	// <'meta', ')', (0,-1)>
+
+	
 	let n = regex.length;
 	let tokens = [];
 	let value;
@@ -449,7 +691,7 @@ Regex.prototype.TokenizeRegex = function(regex) {
 					if (valB != -1 && valB < valA)
 						throw "PARSE ERROR";
 					
-					tokens.push(new this.Repetition(valA, valB));
+					tokens[tokens.length - 1].ChangeRepetitions([valA,valB])
 					break;
 				default:
 					throw "ERROR";
@@ -466,7 +708,7 @@ Regex.prototype.TokenizeRegex = function(regex) {
 			
 
 		else if (notCommand) {
-			tokens.push(new this.Token('character', value));
+			tokens.push(new this.Token('char', value, [1,1]));
 			notCommand = false;
 		}
 
@@ -475,7 +717,8 @@ Regex.prototype.TokenizeRegex = function(regex) {
 				case '[':
 				case '(':
 				case ')':
-					tokens.push(new this.Token('structure', value));
+				case '|':
+					tokens.push(new this.Token('meta', value, [1,1]));
 					break;
 					
 				case '{':
@@ -492,21 +735,17 @@ Regex.prototype.TokenizeRegex = function(regex) {
 					break;
 					
 				case '*':
-					tokens.push(new this.Repetition(0, -1));
+					tokens[tokens.length - 1].ChangeRepetitions([0,-1]);
 					break;
 				case '+':
-					tokens.push(new this.Repetition(1, -1));
+					tokens[tokens.length - 1].ChangeRepetitions([1,-1])
 					break;
 				case '?':
-					tokens.push(new this.Repetition(0, 1));
-					break;
-					
-				case '|':
-					tokens.push(new this.Token('or', value));
+					tokens[tokens.length - 1].ChangeRepetitions([0,1])
 					break;
 					
 				default:
-					tokens.push(new this.Token('character', value));
+					tokens.push(new this.Token('char', value, [1,1]));
 					break;
 			}
 		}
@@ -515,24 +754,17 @@ Regex.prototype.TokenizeRegex = function(regex) {
 	return tokens;
 }
 
-Regex.prototype.Token = function(type, value) {
+Regex.prototype.Token = function(type, value, repetitions) {
 	this.type = type;
 	this.value = value;
-	this.repetitions = null;
+	this.repetitions = repetitions;
 	
-	this.Copy = function() {
-		let newToken = new this.constructor(this.type, this.value);
-		newToken.repetitions = this.repetitions.Copy();
-		return newToken;
+	this.ChangeRepetitions = function(newRepetitions) {
+		this.repetitions = newRepetitions
 	}
-}
-
-Regex.prototype.Repetition = function(start, end) {
-	this.start = start;
-	this.end = end;
 	
 	this.Copy = function() {
-		return new this.constructor(this.start, this.end);
+		return new this.constructor(this.type, this.value, this.repetitions);
 	}
 }
 
@@ -760,6 +992,9 @@ function SubsetConstruction(nfa) {
 			this.dfa.transitionTable[i]['end'] = false;
 	}
 	
+	this.AddDeadState(nfa.values);
+	this.SimplifyDeadStates();
+	//this.Minimise(nfa.values);
 	console.log(this.dfa);
 }
 
@@ -829,6 +1064,7 @@ SubsetConstruction.prototype.Build = function(nfa) {
 	let symbols = [];
 	
 	// Get all starting states via eClosure of state 0.
+	
 	let startStates = nfa.eClosure([0]);
 	
 	// Populate the array of symbols with all symbols excluding null (empty).
@@ -850,7 +1086,7 @@ SubsetConstruction.prototype.Recursive = function(nfa, state, symbols) {
 		let move = nfa.Move(this.StateMapping[state], symbol);
 		
 		states = nfa.eClosure(move);
-		
+
 		if (states.length > 0 && !this.HasMapping(states)) {
 			mapping = this.GetMapping(states);
 			this.dfa.transitionTable[state][symbol] = mapping;
@@ -860,3 +1096,88 @@ SubsetConstruction.prototype.Recursive = function(nfa, state, symbols) {
 		}
 	}
 }
+
+SubsetConstruction.prototype.AddDeadState = function(symbols) {
+	for (let i = 0; i < this.mappings; i++) {
+		for (let j = 0; j < symbols.length; j++) {
+			if (symbols[j] != null && !this.dfa.transitionTable[i].hasOwnProperty(symbols[j])) {
+				if (!this.dfa.transitionTable.hasOwnProperty(this.mappings))
+					this.dfa.transitionTable[this.mappings] = { start: false, end: false };
+				
+				this.dfa.transitionTable[i][symbols[j]] = this.mappings;
+			}
+		}
+	}
+	
+	if (this.dfa.transitionTable.hasOwnProperty(this.mappings))
+		this.mappings += 1;
+}
+
+SubsetConstruction.prototype.IsDeadState = function(state) {
+	return this.IsDeadStateRecursive(state, []);
+}
+
+
+SubsetConstruction.prototype.IsDeadStateRecursive = function(state, checked) {
+	let symbols = Object.keys(this.dfa.transitionTable[state]);
+	
+	// False if end.
+	if (this.dfa.transitionTable[state]['end'])
+		return false;
+	
+	// True if dead state or cyclic (so we don't re-check it).
+	if (symbols.length == 2 || checked.includes(state))
+		return true;
+	
+	checked.push(state);
+	
+	// Search all branches for at least one end or all dead.
+	for (let i = 0; i < symbols.length; i++) {
+		if (symbols[i] != 'start' && symbols[i] != 'end') {
+			if (!this.IsDeadStateRecursive(this.dfa.transitionTable[state][symbols[i]], checked)) {
+				return false;
+			}
+		}
+	}
+	
+	return true;
+}
+
+
+SubsetConstruction.prototype.SimplifyDeadStates = function() {
+	let deadStates = [];
+	
+	for (let i = 0; i < this.mappings - 1; i++) {
+		if (this.IsDeadState(i)) {
+			this.RemoveState(i, this.mappings - 1);
+		}
+	}
+}
+
+SubsetConstruction.prototype.RemoveState = function(state, newState) {
+	// For every state i where i > state to remove, assign object at i to i-1.
+	// Remove the last object and decrement mappings.
+	for (let i = 0; i < this.mappings; i++) {
+		let symbols = Object.keys(this.dfa.transitionTable[state]);
+		
+		for (let j = 0; j < symbols.length; j++) {
+			if (symbols[j] != 'start' && symbols[j] != 'end') {
+				if (this.dfa.transitionTable[i][symbols[j]] == state)
+					this.dfa.transitionTable[i][symbols[j]] = newState;
+				
+				if (this.dfa.transitionTable[i][symbols[j]] > state)
+					this.dfa.transitionTable[i][symbols[j]] -= 1;
+			}
+		}
+		
+		if (i > state) {
+			this.dfa.transitionTable[i - 1] = this.dfa.transitionTable[i];
+		}
+	}
+	
+	delete this.dfa.transitionTable[this.mappings - 1];
+	this.mappings -= 1;
+}
+
+
+// SubsetConstruction.prototype.Minimise will use Hopcroft's algorithm, but I haven't gotten yet figured out how to do this.
