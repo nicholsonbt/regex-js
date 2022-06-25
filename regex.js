@@ -5,6 +5,7 @@
  */
 function Regex(regex) {
 	this.AddRegex(regex);
+	this.dfa;
 }
 
 /**
@@ -25,7 +26,7 @@ Regex.prototype.AddRegex = function(regex) {
 	// Output the NFA.
 	nfa.Print();
 	
-	let dfa = new SubsetConstruction(nfa);
+	this.dfa = new SubsetConstruction(nfa);
 }
 
 /**
@@ -768,6 +769,17 @@ Regex.prototype.Token = function(type, value, repetitions) {
 	}
 }
 
+
+Regex.prototype.IsValidWord = function(word) {
+	return this.dfa.IsValidWord(word);
+}
+
+Regex.prototype.FindAll = function(word) {
+	return this.dfa.FindAll(word);
+}
+
+
+
 function NFA() {
 	this.transitionTable = {};
 	this.end = 0;
@@ -893,9 +905,6 @@ NFA.prototype.Asterisk = function(nfa) {
 	return nfaNew;
 }
 
-
-
-
 NFA.prototype.eClosure = function(startStates) {
 	let reachable = [];
 	let r0, r1;
@@ -972,6 +981,104 @@ function DFA() {
 }
 
 
+DFA.prototype.IsValidWord = function(word) {
+	let state = 0;
+	
+	for (let i = 0; i < word.length; i++) {
+		if (!this.transitionTable.hasOwnProperty(state) || !this.transitionTable[state].hasOwnProperty(word[i]))
+			return false;
+		
+		state = this.transitionTable[state][word[i]];
+	}
+	
+	if (this.transitionTable[state]['end'])
+		return true;
+	
+	return false;
+}
+
+DFA.prototype.FindAll = function(word) {
+	let state = 0;
+	let valid = [];
+	let w, x;
+	
+	for (let i = 0; i < word.length; i++) {
+		x = this.ValidWordLength(word, i);
+		
+		if (x != -1) {
+			w = '';
+			
+			for (let j = i; j <= x; j++) {
+				w += word[j];
+			}
+			
+			i = x;
+			
+			if (!valid.includes(w))
+				valid.push(w);
+		}
+	}
+
+	return valid;
+}
+
+DFA.prototype.ValidWordLength = function(word, start) {
+	let state = 0;
+	let lastValid = -1;
+	
+	for (let i = start; i < word.length; i++) {
+		
+		if (!this.transitionTable.hasOwnProperty(state) || !this.transitionTable[state].hasOwnProperty(word[i])) {
+			return lastValid;
+		}
+		
+		else if (this.IsDeadState(this.transitionTable[state][word[i]])) {
+			return lastValid;
+		}
+			
+		state = this.transitionTable[state][word[i]];
+		
+		if (this.transitionTable[state]['end'])
+			lastValid = i;
+	}
+	
+	return lastValid;
+}
+
+DFA.prototype.IsDeadState = function(state) {
+	return this.IsDeadStateRecursive(state, []);
+}
+
+DFA.prototype.IsDeadStateRecursive = function(state, checked) {
+	let symbols = Object.keys(this.transitionTable[state]);
+	
+	// False if end.
+	if (this.transitionTable[state]['end'])
+		return false;
+	
+	// True if dead state or cyclic (so we don't re-check it).
+	if (symbols.length == 2 || checked.includes(state))
+		return true;
+	
+	checked.push(state);
+	
+	// Search all branches for at least one end or all dead.
+	for (let i = 0; i < symbols.length; i++) {
+		if (symbols[i] != 'start' && symbols[i] != 'end') {
+			if (!this.IsDeadStateRecursive(this.transitionTable[state][symbols[i]], checked)) {
+				return false;
+			}
+		}
+	}
+	
+	return true;
+}
+
+
+
+
+
+
 function SubsetConstruction(nfa) {
 	this.StateMapping = {};
 	this.dfa = new DFA();
@@ -995,7 +1102,7 @@ function SubsetConstruction(nfa) {
 	this.AddDeadState(nfa.values);
 	this.SimplifyDeadStates();
 	//this.Minimise(nfa.values);
-	console.log(this.dfa);
+	return this.dfa;
 }
 
 SubsetConstruction.prototype.GetMapping = function(nfaStates) {

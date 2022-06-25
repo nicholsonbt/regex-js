@@ -8,6 +8,8 @@
 				let regex1 = new Regex("(a|b)*abb");
 				let regex2 = new Regex("a(b|c)*");
 				let regex3 = new Regex("(a|b|c|d{3,4})+b{3,5}(cb?|d)*");
+				let regex4 = new Regex("(apple)|(banana)|(pear)|(strawberry)"); // Using i* isn't working here (the issue appears to be in the parsing stage).
+				console.log(regex4.FindAll("I like lots of fruit such as apples, mangos and grapes, but my favourite fruit is the strawberry and my least favourite is the pear."));
 			});
 		</script>
 	</head>
